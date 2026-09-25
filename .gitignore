@@ -1,0 +1,9 @@
+.DS_Store
+data/
+*.sqlite*
+__pycache__/
+*.pyc
+.Rhistory
+.RData
+.Rproj.user/
+.vscode/settings.json

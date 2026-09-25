@@ -1,0 +1,9 @@
+{
+  "version":"2.0.0",
+  "tasks":[
+    {"label":"MESS: Install R packages","type":"process","command":"Rscript","args":["dashboard/install.R"],"options":{"cwd":"${workspaceFolder}"},"problemMatcher":[]},
+    {"label":"MESS: R dashboard","type":"process","command":"Rscript","args":["dashboard/run.R"],"options":{"cwd":"${workspaceFolder}"},"problemMatcher":[]},
+    {"label":"MESS: Local collector","type":"process","command":"python3","windows":{"command":"python"},"args":["firmware/gas_sensor/server/receiver.py","--output","data"],"options":{"cwd":"${workspaceFolder}"},"problemMatcher":[]},
+    {"label":"MESS: LAN collector for ESP32","type":"process","command":"python3","windows":{"command":"python"},"args":["firmware/gas_sensor/server/receiver.py","--host","0.0.0.0","--output","data"],"options":{"cwd":"${workspaceFolder}"},"problemMatcher":[]}
+  ]
+}

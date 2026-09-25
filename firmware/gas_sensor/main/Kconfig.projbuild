@@ -1,0 +1,45 @@
+menu "MESS gas sensor"
+config MESS_SDA
+    int "SDA GPIO (verify your board)"
+    default 21
+config MESS_SCL
+    int "SCL GPIO (verify your board)"
+    default 22
+config MESS_WIFI_SSID
+    string "Wi-Fi SSID (empty = serial only)"
+    default ""
+config MESS_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+config MESS_SERVER_URL
+    string "Laptop receiver URL"
+    default "http://192.168.1.100:8000/readings"
+config MESS_NTP_SERVER
+    string "NTP server (empty disables clock sync and baseline persistence)"
+    default "pool.ntp.org"
+config MESS_MESH
+    bool "Enable ESP-WIFI-MESH multi-hop transport"
+    default n
+config MESS_SENSOR_ENABLED
+    bool "SGP30 fitted to this node (disable for relay-only node)"
+    default y
+config MESS_MESH_GROUP
+    int "Gas team mesh group ID (same on every team node)"
+    range 1 255
+    default 4
+    depends on MESS_MESH
+config MESS_MESH_CHANNEL
+    int "Router Wi-Fi channel (same on every node)"
+    range 1 11
+    default 6
+    depends on MESS_MESH
+config MESS_MESH_LAYERS
+    int "Maximum mesh layers including root"
+    range 2 10
+    default 6
+    depends on MESS_MESH
+config MESS_MESH_PASSWORD
+    string "Mesh link password (8..63 characters, set the same on all nodes)"
+    default ""
+    depends on MESS_MESH
+endmenu

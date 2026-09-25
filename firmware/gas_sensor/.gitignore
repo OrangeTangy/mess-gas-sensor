@@ -1,0 +1,12 @@
+build/
+sdkconfig
+sdkconfig.old
+sdkconfig.local*
+managed_components/
+__pycache__/
+*.pyc
+*.csv
+*.jsonl
+.DS_Store
+
+sdkconfig.ci

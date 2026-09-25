@@ -1,0 +1,37 @@
+name: Software checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  software:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+      - run: Rscript dashboard/install.R --tests
+      - run: Rscript dashboard/test_analytics.R
+      - run: Rscript dashboard/test_server.R
+      - run: python3 -m unittest discover -s firmware/gas_sensor/tests -p 'test_*.py'
+      - name: Driver protocol checks
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -I firmware/gas_sensor/components/sgp30/include firmware/gas_sensor/components/sgp30/sgp30.c firmware/gas_sensor/tests/test_driver.c -lm -o /tmp/test-driver
+          /tmp/test-driver
+  firmware:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.1
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [serial, wifi, mesh-sensor, mesh-relay]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build classic ESP32 firmware
+        shell: bash
+        run: |
+          . /opt/esp/idf/export.sh
+          python scripts/ci_config.py '${{ matrix.mode }}'
+          cd firmware/gas_sensor
+          idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.ci' set-target esp32 build
