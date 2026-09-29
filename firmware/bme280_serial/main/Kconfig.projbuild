@@ -1,0 +1,8 @@
+menu "MESS BME280"
+config MESS_BME_SDA
+    int "I2C SDA GPIO"
+    default 21
+config MESS_BME_SCL
+    int "I2C SCL GPIO"
+    default 22
+endmenu

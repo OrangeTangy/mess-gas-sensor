@@ -6,6 +6,12 @@ You can run the dashboard on macOS, Windows, or Linux **without plugging in an E
 
 > Status: the dashboard and collector have been tested on a Mac, and the firmware has been compiled for a classic ESP32 using ESP-IDF 6.1. Physical sensor behavior, radio range, and multi-node recovery still need hardware testing. Simulated values are not hardware evidence.
 
+## Using the BME280 right now?
+
+For the team's simple **temperature, humidity and pressure** serial test, open [BME280 Windows setup and run instructions](firmware/bme280_serial/README.md). The project is in `firmware/bme280_serial`; its Bosch driver is included. Your teammate can build, flash and monitor it from their existing ESP-IDF setup.
+
+**BME280 does not measure gas.** This standalone test prints to the USB serial monitor; it does not feed the SGP30 R dashboard. The gas-sensor instructions below apply to the SGP30 project.
+
 ## What runs where?
 
 ```text
