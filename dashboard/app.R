@@ -56,7 +56,15 @@ ui <- fluidPage(
         actionButton("save_trial","Start this test step",class="btn-primary"),uiOutput("trial_result"))),
         column(8,div(class="panelx",h3("Distance and delivery"),p(class="hint","Distance is entered by your team; it is not measured by the radio."),plotOutput("range_plot",height="340px")))),
       div(class="panelx",h3("Experiment ledger"),tableOutput("range_table"),
-        p(class="hint","Use fixed-duration trials and record outage time separately. A 100% result from a short received span does not establish reliable maximum range.")))),
+        p(class="hint","Use fixed-duration trials and record outage time separately. A 100% result from a short received span does not establish reliable maximum range."))),
+    tabPanel("Environment (BME280)",value="env",
+      div(class="panelx",fluidRow(
+        column(4,textInput("bme_endpoint","BME280 bridge address",Sys.getenv("MESS_BME_BRIDGE","http://127.0.0.1:8001"))),
+        column(8,p(class="hint","Live readings from the BME280 bridge (USB serial, gateway hotspot or direct Wi-Fi). This tab ignores Data source and Nodes; Time window still applies. BME280 does not measure gas.")))),
+      uiOutput("bme_status"),uiOutput("bme_metrics"),
+      div(class="panelx",h3("Temperature"),p(class="hint","BME280 · °C · nearby board heat can raise this"),plotOutput("temp_plot",height="235px")),
+      fluidRow(column(6,div(class="panelx",h3("Relative humidity"),p(class="hint","BME280 · %RH"),plotOutput("humidity_plot",height="235px"))),
+        column(6,div(class="panelx",h3("Pressure"),p(class="hint","BME280 · hPa · local absolute pressure, not sea-level corrected"),plotOutput("pressure_plot",height="235px")))))),
   div(class="footer","MESS GAS TEAM · Local R Shiny dashboard · Collection and radio operation require your hardware")
 )
 server <- function(input,output,session) {
@@ -147,6 +155,63 @@ server <- function(input,output,session) {
       p(sum(d$status=="sensor_error")," sensor-error records; ",sum(d$status=="warming_up")," startup records."),
       p(class="hint","Statistics exclude invalid gas values. No humidity compensation is applied unless the firmware reports a fresh external humidity input."))
   })
+  bme_source <- reactive({
+    invalidateLater(2000,session)
+    if(!identical(input$view,"env")) return(list(data=data.frame(),error=NULL,state=NULL))
+    tryCatch({
+      handle <- new_handle(timeout=3,connecttimeout=2)
+      response <- curl_fetch_memory(paste0(sub("/+$","",input$bme_endpoint),"/snapshot?limit=20000"),handle=handle)
+      if(response$status_code!=200) stop(paste("Bridge returned HTTP",response$status_code))
+      payload <- fromJSON(rawToChar(response$content))
+      list(data=prepare_bme(payload$readings),error=NULL,state=payload$state,port=payload$port)
+    },error=function(e) list(data=data.frame(),error=conditionMessage(e),state=NULL))
+  })
+  bme_filtered <- reactive({
+    d <- bme_source()$data
+    minutes <- if(is.null(input$window)) 10 else as.numeric(input$window)
+    if(nrow(d) && minutes>0) d <- d[d$received_at>=Sys.time()-minutes*60,,drop=FALSE]
+    d
+  })
+  output$bme_status <- renderUI({
+    s <- bme_source()
+    if(!is.null(s$error)) div(class="mode-banner error",strong("BME280 BRIDGE UNREACHABLE"),paste("—",s$error,"· Start firmware/bme280_serial/server/bridge.py. No simulated data is substituted."))
+    else if(!is.null(s$state) && !identical(s$state,"connected")) div(class="mode-banner error",strong("BME280 SERIAL NOT CONNECTED"),paste("—",s$port,":",s$state))
+    else {
+      latest <- if(nrow(s$data)) tail(s$data,1) else NULL
+      via <- if(is.null(latest)) "waiting for the first reading" else if(latest$source=="wifi") paste0("latest via Wi-Fi from …",substr(latest$node_id,9,12),if(!is.na(latest$rssi_dbm)) paste0(" (",latest$rssi_dbm," dBm)")) else paste("latest via USB serial",s$port)
+      div(class="mode-banner live",strong("LIVE BME280"),paste("—",via,"·",nrow(s$data),"readings loaded · refresh every 2 seconds"))
+    }
+  })
+  output$bme_metrics <- renderUI({
+    d <- bme_filtered(); latest <- if(nrow(d)) tail(d,1) else NULL
+    age <- if(is.null(latest)) "Awaiting a reading" else paste("Sample age",round(as.numeric(difftime(Sys.time(),latest$received_at,units="secs"))),"s")
+    div(class="metrics",
+      metric("Temperature",if(is.null(latest)) "—" else sprintf("%.2f °C",latest$temperature_c),age),
+      metric("Humidity",if(is.null(latest)) "—" else sprintf("%.1f %%RH",latest$humidity_pct),age),
+      metric("Pressure",if(is.null(latest)) "—" else sprintf("%.2f hPa",latest$pressure_hpa),age),
+      metric("Samples loaded",format(nrow(d),big.mark=","),"In selected time window"))
+  })
+  env_plot <- function(d,field,label) {
+    par(mar=c(3,6,1,1),bg="white",fg="#333333",col.axis="#333333",col.lab="#333333")
+    if(!nrow(d)) { plot.new(); text(.5,.5,"Awaiting BME280 readings",col="#333333"); return() }
+    ylim <- range(d[[field]]); if(diff(ylim)==0) ylim <- ylim+c(-1,1)
+    xlim <- range(d$received_at); if(diff(as.numeric(xlim))==0) xlim <- xlim+c(-1,1)
+    plot(xlim,ylim,type="n",xlab="",ylab="",bty="n",yaxt="n",xaxt="n")
+    # Pressure ticks like 1019.45 are wide; keep the unit clear of them.
+    mtext(label,side=2,line=4.5,col="#333333")
+    axis(2,las=1,tck=0); axis.POSIXct(1,at=pretty(xlim,n=5),format="%H:%M:%S",tck=0)
+    abline(h=pretty(ylim),col="#dddddd",lwd=1)
+    sources <- sort(unique(d$source))
+    for(i in seq_along(sources)) {
+      g <- d[d$source==sources[i],,drop=FALSE]
+      # Break the line at gaps > 3 seconds (unplugged, reset, out of range) rather than suggesting continuity.
+      for(part in split(g,cumsum(c(TRUE,diff(as.numeric(g$received_at))>3)))) lines(part$received_at,part[[field]],lty=i,lwd=1.6)
+    }
+    if(length(sources)>1) legend("topleft",legend=sources,lty=seq_along(sources),lwd=2,bty="n",horiz=TRUE,cex=.8)
+  }
+  output$temp_plot <- renderPlot(env_plot(bme_filtered(),"temperature_c","°C"),res=110)
+  output$humidity_plot <- renderPlot(env_plot(bme_filtered(),"humidity_pct","%RH"),res=110)
+  output$pressure_plot <- renderPlot(env_plot(bme_filtered(),"pressure_hpa","hPa"),res=110)
   output$range_table <- renderTable({
     v <- range_summary(filtered()); shiny::validate(need(nrow(v)>0,"No annotated range trials yet.")); v
   },rownames=FALSE,na="—")

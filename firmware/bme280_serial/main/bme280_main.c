@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "esp_rom_sys.h"
 #include "bme280.h"
+#include "wifi_sender.h"
 
 static const char *TAG = "BME280";
 static i2c_master_dev_handle_t sensor;
@@ -45,6 +46,7 @@ static bool checked(const char *operation, int8_t result)
 
 void app_main(void)
 {
+    mess_wifi_start();
     i2c_master_bus_handle_t bus;
     const i2c_master_bus_config_t bus_config = {
         .i2c_port = I2C_NUM_0,
@@ -105,6 +107,7 @@ void app_main(void)
             if (checked("Read measurement", bme280_get_sensor_data(BME280_ALL, &data, &dev))) {
                 printf("Temperature: %.2f C | Humidity: %.2f %%RH | Pressure: %.2f hPa\n",
                     data.temperature, data.humidity, data.pressure / 100.0);
+                mess_wifi_submit(data.temperature, data.humidity, data.pressure / 100.0);
             }
         }
         xTaskDelayUntil(&previous, pdMS_TO_TICKS(1000));

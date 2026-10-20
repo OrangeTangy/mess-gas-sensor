@@ -14,6 +14,15 @@ prepare_data <- function(d) {
   d <- d[!duplicated(paste(d$node_id,d$boot_id,d$sequence)),,drop=FALSE]
   d[order(d$received_at),,drop=FALSE]
 }
+prepare_bme <- function(d) {
+  if (is.null(d) || !is.data.frame(d) || !nrow(d)) return(data.frame())
+  d$received_at <- as.POSIXct(d$received_at, format="%Y-%m-%dT%H:%M:%OS", tz="UTC")
+  d <- d[!is.na(d$received_at), , drop=FALSE]
+  if (!"source" %in% names(d)) d$source <- "serial"
+  if (!"node_id" %in% names(d)) d$node_id <- ""
+  for (key in c("temperature_c","humidity_pct","pressure_hpa","rssi_dbm")) d[[key]] <- if (key %in% names(d)) as.numeric(d[[key]]) else NA_real_
+  d[order(d$received_at),,drop=FALSE]
+}
 span_delivery <- function(d) {
   if (!nrow(d)) return(list(received=0,expected=0,missing=0,pct=NA_real_))
   groups <- split(d, paste(d$node_id,d$boot_id))

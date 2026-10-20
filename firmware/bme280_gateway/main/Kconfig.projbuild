@@ -1,0 +1,12 @@
+menu "MESS BME280 gateway"
+config MESS_GW_SSID
+    string "Hotspot name"
+    default "MESS-BME280"
+config MESS_GW_PASSWORD
+    string "Hotspot password (8..63 characters, required)"
+    default ""
+config MESS_GW_CHANNEL
+    int "Wi-Fi channel"
+    range 1 11
+    default 6
+endmenu

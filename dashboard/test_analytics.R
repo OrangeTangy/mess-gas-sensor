@@ -11,4 +11,7 @@ stopifnot(span_delivery(x)$missing==0)
 x <- rbind(x,x[1,]); x$received_at <- format(x$received_at,"%Y-%m-%dT%H:%M:%OS3Z",tz="UTC")
 stopifnot(nrow(prepare_data(x))==3,nrow(range_summary(d))==16)
 stopifnot(sum(node_summary(d,as.POSIXct("2026-09-22 12:00:00",tz="UTC"))$state=='OFFLINE')==1)
+b <- prepare_bme(data.frame(received_at=c("2026-10-20T12:00:02+00:00","2026-10-20T12:00:01+00:00","bad"),
+  temperature_c=c(24.6,24.5,1),humidity_pct=c(43,42,1),pressure_hpa=c(1019.4,1019.5,1)))
+stopifnot(nrow(b)==2,b$temperature_c[1]==24.5,nrow(prepare_bme(list()))==0)
 cat("R analytics tests passed\n")

@@ -15,6 +15,7 @@ jobs:
       - run: Rscript dashboard/test_analytics.R
       - run: Rscript dashboard/test_server.R
       - run: python3 -m unittest discover -s firmware/gas_sensor/tests -p 'test_*.py'
+      - run: python3 -m unittest discover -s firmware/bme280_serial/tests -p 'test_*.py'
       - name: Driver protocol checks
         run: |
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -I firmware/gas_sensor/components/sgp30/include firmware/gas_sensor/components/sgp30/sgp30.c firmware/gas_sensor/tests/test_driver.c -lm -o /tmp/test-driver
