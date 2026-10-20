@@ -8,6 +8,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
+import tempfile
 import threading
 import time
 from urllib.parse import urlparse, parse_qs
@@ -62,6 +65,44 @@ def validate(data, now=None):
                 rssi_dbm=data['rssi_dbm'])
 
 
+def site_data(csv_path, now=None, hours=24, step_s=10):
+    """Columnar, thinned readings for the public site; omits node IDs (board MAC addresses)."""
+    now = now or datetime.now(timezone.utc)
+    start = now.timestamp() - hours * 3600
+    out = dict(generated_at=now.isoformat(), window_hours=hours, step_s=step_s,
+               t=[], temperature_c=[], humidity_pct=[], pressure_hpa=[])
+    if not Path(csv_path).exists():
+        return out
+    with open(csv_path, newline='') as f:
+        for row in csv.DictReader(f):
+            try:
+                t = datetime.fromisoformat(row['received_at']).timestamp()
+                values = [float(row[k]) for k in ('temperature_c', 'humidity_pct', 'pressure_hpa')]
+            except (KeyError, TypeError, ValueError):
+                continue
+            if t < start or (out['t'] and t < out['t'][-1] + step_s):
+                continue
+            out['t'].append(int(t))
+            for key, value in zip(('temperature_c', 'humidity_pct', 'pressure_hpa'), values):
+                out[key].append(value)
+    return out
+
+
+def publish(site_dir, payload, remote, branch='gh-pages', author=None):
+    """Force-pushes the site plus data as a single commit, so the branch never accumulates history."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'site'
+        shutil.copytree(site_dir, root)
+        (root / 'data').mkdir(exist_ok=True)
+        (root / 'data' / 'bme280.json').write_text(json.dumps(payload, separators=(',', ':'), allow_nan=False))
+        (root / '.nojekyll').touch()
+        identity = sum((['-c', f'user.{k}={v}'] for k, v in (author or {}).items() if v), [])
+        for args in (['init', '-q', '-b', branch], ['add', '-A'],
+                     identity + ['commit', '-q', '-m', 'Publish BME280 readings ' + payload['generated_at']],
+                     ['push', '-q', '--force', remote, 'HEAD:' + branch]):
+            subprocess.run(['git', '-C', str(root)] + args, check=True, capture_output=True, text=True, timeout=120)
+
+
 class Bridge(ThreadingHTTPServer):
     def __init__(self, address, port, baud, directory, keep=20000):
         self.serial_port, self.baud = port, baud
@@ -83,6 +124,20 @@ class Bridge(ThreadingHTTPServer):
                     writer.writeheader()
                 writer.writerow(reading)
         print(json.dumps(reading), flush=True)
+
+    def publish_loop(self, repo, every_s):
+        git = lambda *a: subprocess.run(['git', '-C', str(repo)] + list(a), capture_output=True, text=True).stdout.strip()
+        remote = git('remote', 'get-url', 'origin')
+        author = dict(name=git('config', 'user.name'), email=git('config', 'user.email'))
+        while True:
+            try:
+                payload = site_data(self.directory / 'bme280.csv')
+                publish(repo / 'site', payload, remote, author=author)
+                print(f'Published {len(payload["t"])} points to gh-pages at {payload["generated_at"]}', flush=True)
+            except (OSError, subprocess.SubprocessError) as e:
+                detail = getattr(e, 'stderr', '') or e
+                print(f'Publish failed (will retry): {str(detail).strip()}', flush=True)
+            time.sleep(every_s)
 
     def read_serial(self):
         import serial
@@ -161,6 +216,9 @@ def main():
     parser.add_argument('--host', default='127.0.0.1', help='Use 0.0.0.0 so an ESP32 on Wi-Fi can reach this laptop')
     parser.add_argument('--http-port', type=int, default=8001)
     parser.add_argument('--output', default='data')
+    parser.add_argument('--publish', action='store_true', help='Push the public site and last 24 h of readings to the gh-pages branch')
+    parser.add_argument('--publish-every', type=int, default=360,
+                        help='Seconds between pushes; GitHub Pages allows about 10 builds per hour (default 360)')
     args = parser.parse_args()
     if args.port:
         try:
@@ -170,6 +228,9 @@ def main():
     server = Bridge((args.host, args.http_port), args.port, args.baud, args.output)
     if args.port:
         threading.Thread(target=server.read_serial, daemon=True).start()
+    if args.publish:
+        repo = Path(__file__).resolve().parents[3]
+        threading.Thread(target=server.publish_loop, args=(repo, max(60, args.publish_every)), daemon=True).start()
     print(f'BME280 bridge: serial {args.port or "off"}, Wi-Fi POST http://{args.host}:{args.http_port}/readings'
           f' | log: {(server.directory/"bme280.csv").resolve()}', flush=True)
     try:

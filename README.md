@@ -10,7 +10,7 @@ You can run the dashboard on macOS, Windows, or Linux **without plugging in an E
 
 For the team's simple **temperature, humidity and pressure** serial test, open [BME280 Windows setup and run instructions](firmware/bme280_serial/README.md). The project is in `firmware/bme280_serial`; its Bosch driver is included. Your teammate can build, flash and monitor it from their existing ESP-IDF setup.
 
-**BME280 does not measure gas.** Its readings appear on the dashboard's separate **Environment (BME280)** tab, sent over USB serial, or wirelessly from a battery-powered node through a gateway ESP32 hotspot ([`firmware/bme280_gateway`](firmware/bme280_gateway/README.md)), via a small laptop bridge (see [its README](firmware/bme280_serial/README.md#see-readings-on-the-dashboard-graph)). The gas-sensor instructions below apply to the SGP30 project.
+**BME280 does not measure gas.** Its readings appear on the dashboard's separate **Environment (BME280)** tab, sent over USB serial, or wirelessly from a battery-powered node through a gateway ESP32 hotspot ([`firmware/bme280_gateway`](firmware/bme280_gateway/README.md)), via a small laptop bridge that can also publish to the [live website](https://orangetangy.github.io/mess-gas-sensor/) (see [its README](firmware/bme280_serial/README.md#see-readings-on-the-dashboard-graph)). The gas-sensor instructions below apply to the SGP30 project.
 
 ## What runs where?
 

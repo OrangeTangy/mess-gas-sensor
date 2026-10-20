@@ -65,5 +65,17 @@ class Tests(unittest.TestCase):
             finally:
                 server.shutdown(); server.server_close()
 
+    def test_site_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'bme280.csv'
+            rows = ['received_at,source,node_id,sequence,temperature_c,humidity_pct,pressure_hpa,rssi_dbm']
+            for s in [-90000, 0, 4, 10, 11, 25]:  # seconds after NOW; first is outside 24 h
+                rows.append(f'{datetime.fromtimestamp(NOW.timestamp() + s, timezone.utc).isoformat()},wifi,a4cf12000101,1,24.5,43.0,1019.4,-50')
+            rows.append('garbage,wifi,,,x,y,z,')
+            path.write_text('\n'.join(rows) + '\n')
+            out = b.site_data(path, datetime.fromtimestamp(NOW.timestamp() + 30, timezone.utc))
+            self.assertEqual([t - int(NOW.timestamp()) for t in out['t']], [0, 10, 25])
+            self.assertNotIn('a4cf12000101', json.dumps(out))
+
 if __name__ == '__main__':
     unittest.main()

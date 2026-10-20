@@ -120,4 +120,28 @@ python3 firmware/bme280_serial/server/bridge.py --port /dev/cu.SLAB_USBtoUART4
 
 The sensor sends only the newest reading and reconnects automatically after the hotspot drops or either board reboots. Readings taken while the link is down are dropped, not queued. Wi-Fi draws roughly 100–250 mA at peaks, so size the battery accordingly. Some power banks switch off at low draw; this load is normally enough to keep them on. Links are plain, unauthenticated HTTP; use only your own hotspot. Built firmware contains the Wi-Fi password, so do not share `.bin` files.
 
+## Publish to the public website
+
+Live site: **https://orangetangy.github.io/mess-gas-sensor/** (temperature, humidity and pressure graphs for 1 h / 6 h / 24 h, latest values, CSV download).
+
+GitHub Pages only serves static files, so the computer running the bridge uploads the data. Add `--publish`:
+
+```sh
+python3 firmware/bme280_serial/server/bridge.py --port GATEWAY_PORT --publish
+```
+
+About every 6 minutes the bridge takes the last 24 hours from `data/bme280.csv` (one point per 10 s), adds the page in `site/`, and force-pushes both as a single commit to the `gh-pages` branch. `main` is untouched and `gh-pages` never builds up history. GitHub limits Pages to roughly 10 builds an hour, hence the interval; with Pages caching, the site runs about 5–20 minutes behind the local dashboard. Board hardware IDs are not published, but the readings are public.
+
+Publishing uses that computer's git sign-in, so it must be able to push to this repository (a collaborator, signed in with `gh auth login` or Git Credential Manager). If a push fails, the bridge logs it and tries again next round; the local dashboard and CSV keep working.
+
+## Running the gateway ("brain") on another computer
+
+The sensor node does not need any computer. Once flashed, it runs from a power bank and keeps rejoining the gateway's hotspot. The gateway only needs USB power, but whichever computer it is plugged into receives the readings, so that computer must run the bridge:
+
+1. Clone this repository and install Python 3 and pyserial (`python3 -m pip install pyserial`, or `py -3 -m pip install pyserial` on Windows).
+2. Plug in the gateway and find its port (macOS: `ls /dev/cu.*`; Windows: Device Manager → Ports, e.g. `COM5`).
+3. Run the bridge with that port, adding `--publish` if that computer should update the website.
+
+Readings are stored in that computer's `data/bme280.csv`. If the gateway is only plugged into a charger, the sensor still connects but nothing is recorded or published. Keep the two boards within Wi-Fi range of each other; range has not been measured yet.
+
 Validation: the exact application and driver sources compiled successfully for classic ESP32 with ESP-IDF 6.1 on macOS. Windows execution and physical BME280 readings have not yet been verified. The previous hello-world USB test verified the ESP32 board, not the attached sensor.
