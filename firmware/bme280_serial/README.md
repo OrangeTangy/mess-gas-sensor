@@ -124,7 +124,7 @@ The sensor sends only the newest reading and reconnects automatically after the 
 
 Live site: **https://orangetangy.github.io/mess-gas-sensor/** (temperature, humidity and pressure graphs for 1 h / 6 h / 24 h, latest values, CSV download).
 
-**Easiest: nothing to install.** Plug the gateway ("brain") into any laptop or desktop, open the site in **Chrome or Edge**, press **Connect brain (USB)** and pick the brain's port (usually "CP2102N USB to UART Bridge"). Readings appear live, once a second. They show only in that browser and are not uploaded, so close the tab before running the bridge on the same port. Safari and Firefox do not support this (no Web Serial). On Windows, a brain that appears as an unknown device needs the Silicon Labs CP210x driver.
+**Easiest: nothing to install.** Plug the gateway ("brain") into any laptop or desktop, open the site in **Chrome or Edge**, press **Connect brain (USB)** and pick the brain's port (usually "CP2102N USB to UART Bridge"). Readings appear live, once a second, on a 5-minute graph, with signal strength and readings received and missed. They show only in that browser and are not uploaded, so close the tab before running the bridge on the same port. Safari and Firefox do not support this (no Web Serial). On Windows, a brain that appears as an unknown device needs the Silicon Labs CP210x driver.
 
 **To update the site for everyone,** that computer runs the bridge instead. GitHub Pages only serves static files, so the computer running the bridge uploads the data. Add `--publish`:
 
