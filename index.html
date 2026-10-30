@@ -29,8 +29,13 @@
   svg text { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
   #connect { font-weight:bold; }
   .connect-hint { font-size:13px; color:var(--muted); }
+  .link { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+  .link[hidden] { display:none; }
+  .link .stat { border:1px solid var(--ink); padding:10px 14px; }
+  .link .label { font-size:12px; color:var(--muted); }
+  .link .value { font-size:20px; font-weight:bold; margin-top:4px; font-variant-numeric:tabular-nums; }
   .readout { position:absolute; top:0; right:0; font-size:12px; color:var(--ink); font-variant-numeric:tabular-nums; }
-  @media (max-width:640px) { .metrics { grid-template-columns:1fr; } .metric .value { font-size:24px; } }
+  @media (max-width:640px) { .metrics { grid-template-columns:1fr; } .link { grid-template-columns:repeat(2,1fr); } .metric .value { font-size:24px; } }
 </style>
 </head>
 <body>
@@ -38,11 +43,18 @@
   <h1>MESS BME280 Live</h1>
   <p class="lede">Temperature, humidity and pressure from the MESS gas team's BME280 test node. BME280 does not measure gas.</p>
   <div id="banner" class="banner">Loading readings…</div>
+  <section class="link" id="link" aria-label="Wireless link" hidden>
+    <div class="stat"><div class="label">Signal strength</div><div class="value" id="l-signal">—</div></div>
+    <div class="stat"><div class="label">Readings received</div><div class="value" id="l-received">—</div></div>
+    <div class="stat"><div class="label">Readings missed</div><div class="value" id="l-missed">—</div></div>
+    <div class="stat"><div class="label">Last reading</div><div class="value" id="l-age">—</div></div>
+  </section>
   <p class="connect-hint" id="connect-hint">Have the brain ESP32? Plug it into this computer's USB and press <strong>Connect brain</strong> to see readings live. Nothing to install.</p>
   <div class="controls" role="group" aria-label="Time range">
-    <button data-hours="1" aria-pressed="true">1 hour</button>
-    <button data-hours="6">6 hours</button>
-    <button data-hours="24">24 hours</button>
+    <button data-seconds="300" aria-pressed="false">5 minutes</button>
+    <button data-seconds="3600" aria-pressed="true">1 hour</button>
+    <button data-seconds="21600" aria-pressed="false">6 hours</button>
+    <button data-seconds="86400" aria-pressed="false">24 hours</button>
     <button id="connect">Connect brain (USB)</button>
     <a class="btn" id="download" download="mess-bme280.csv" href="#">Download CSV</a>
   </div>
@@ -62,10 +74,11 @@ const FIELDS = {
   humidity_pct: {unit: '%RH', digits: 1},
   pressure_hpa: {unit: 'hPa', digits: 2},
 };
-const GAP_S = 60;
-let data = null, hours = 1;
+const GAP_S = 60, LIVE_GAP_S = 5; /* Published points are 10 s apart, live ones 1 s. */
+let data = null, span = 3600;
 
-const fmtTime = t => new Date(t * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+const fmtTime = t => new Date(t * 1000).toLocaleTimeString([], span < 3600
+  ? {hour: '2-digit', minute: '2-digit', second: '2-digit'} : {hour: '2-digit', minute: '2-digit'});
 const ago = s => s < 90 ? Math.round(s) + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : (s / 3600).toFixed(1) + ' h';
 
 function niceTicks(lo, hi, n) {
@@ -78,7 +91,7 @@ function niceTicks(lo, hi, n) {
 
 function drawChart(field) {
   const box = document.getElementById('c-' + field);
-  const t0 = data.generated_at_s - hours * 3600;
+  const t0 = data.generated_at_s - span;
   const idx = data.t.map((t, i) => i).filter(i => data.t[i] >= t0);
   if (!idx.length) { box.innerHTML = '<p class="hint">No readings in this range.</p>'; return; }
   const W = box.clientWidth || 600, H = 220, L = 64, R = 8, T = 18, B = 24;
@@ -90,14 +103,14 @@ function drawChart(field) {
   const x = t => L + (t - xlo) / (xhi - xlo) * (W - L - R);
   const y = v => T + (hi - v) / (hi - lo) * (H - T - B);
   const yt = niceTicks(lo, hi, 4), digits = Math.max(0, -Math.floor(Math.log10(yt.step)));
-  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${field} over the last ${hours} hours">`;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${field} over the last ${ago(span)}">`;
   for (const v of yt.ticks) svg += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v.toFixed(digits)}</text>`;
   const xs = [0, 1, 2, 3, 4].map(k => xlo + k * (xhi - xlo) / 4);
   for (const t of xs) svg += `<text x="${x(t)}" y="${H - 6}" text-anchor="middle">${fmtTime(t)}</text>`;
   let d = '', prev = null;
   for (const i of idx) {
     const t = data.t[i];
-    d += (prev === null || t - prev > GAP_S ? 'M' : 'L') + x(t).toFixed(1) + ',' + y(data[field][i]).toFixed(1);
+    d += (prev === null || t - prev > (prev >= live.since ? LIVE_GAP_S : GAP_S) ? 'M' : 'L') + x(t).toFixed(1) + ',' + y(data[field][i]).toFixed(1);
     prev = t;
   }
   svg += `<path d="${d}" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-linejoin="round"/>`;
@@ -125,8 +138,12 @@ function render() {
   const stale = age > 30 * 60;
   banner.className = 'banner' + (stale ? ' stale' : '');
   if (live.port) {
-    banner.className = 'banner';
-    banner.innerHTML = `<strong>LIVE FROM USB</strong> — ${live.count.toLocaleString()} readings this session, newest ${ago(age)} ago · shown on this computer only`;
+    const silent = age > LIVE_GAP_S;
+    banner.className = 'banner' + (silent ? ' stale' : '');
+    if (silent) banner.innerHTML = `<strong>SENSOR SILENT</strong> — no reading for ${ago(age)}. The brain is still connected; check the sensor's power and distance.`;
+    else if (live.wifi) banner.innerHTML = `<strong>LIVE OVER WI-FI</strong> — sensor …${live.node.slice(-4)} → brain → USB → this computer · shown on this computer only`;
+    else banner.innerHTML = '<strong>LIVE FROM USB</strong> — sensor wired directly to this computer, no Wi-Fi link · shown on this computer only';
+    renderLink(now);
   } else banner.innerHTML = `<strong>${stale ? 'NOT CURRENTLY REPORTING' : 'LIVE'}</strong> — last reading ${ago(age)} ago` +
     ` (${new Date(last * 1000).toLocaleString()}), published ${ago(now - data.generated_at_s)} ago · ${n.toLocaleString()} points over ${data.window_hours} h, one every ${data.step_s} s`;
   for (const f in FIELDS) {
@@ -141,24 +158,45 @@ function render() {
 }
 
 // Live mode: read the brain (gateway) or a USB-connected sensor straight from the serial port.
-const live = {port: null, reader: null, count: 0, last: 0};
+const live = {port: null, reader: null, count: 0, last: 0, since: Infinity, wifi: false,
+  node: '', boot: null, sequence: 0, missed: 0, rssi: null};
 const LINE = /Temperature: (-?\d+\.\d+) C \| Humidity: (\d+\.\d+) %RH \| Pressure: (\d+\.\d+) hPa/;
 const inRange = r => r.temperature_c >= -40 && r.temperature_c <= 85 && r.humidity_pct >= 0 &&
   r.humidity_pct <= 100 && r.pressure_hpa >= 300 && r.pressure_hpa <= 1100;
 
 function parseLine(line) {
-  let r = null;
+  let r = null, link = null;
   const at = line.indexOf('MESS_BME_JSON ');
   if (at >= 0) {
     try {
       const j = JSON.parse(line.slice(at + 14));
       r = {temperature_c: j.temperature_c, humidity_pct: j.humidity_pct, pressure_hpa: j.pressure_hpa};
+      link = {node: String(j.node_id), boot: j.boot_id, sequence: j.sequence, rssi: j.rssi_dbm};
     } catch (e) { return null; }
   } else {
     const m = LINE.exec(line);
     if (m) r = {temperature_c: +m[1], humidity_pct: +m[2], pressure_hpa: +m[3]};
   }
-  return r && Object.values(r).every(Number.isFinite) && inRange(r) ? r : null;
+  return r && Object.values(r).every(Number.isFinite) && inRange(r) ? {...r, link} : null;
+}
+
+/* The sensor numbers every reading, so a jump within one boot is a reading lost on the way. */
+function noteLink(link) {
+  live.wifi = !!link;
+  if (!link) return;
+  if (link.boot === live.boot && link.sequence > live.sequence) live.missed += link.sequence - live.sequence - 1;
+  live.node = link.node; live.boot = link.boot; live.sequence = link.sequence; live.rssi = link.rssi;
+}
+
+const signalWord = dbm => dbm >= -60 ? 'strong' : dbm >= -75 ? 'fair' : 'weak';
+
+function renderLink(now) {
+  const known = live.wifi && Number.isFinite(live.rssi) && live.rssi > -127;
+  const set = (id, text) => { document.getElementById(id).textContent = text; };
+  set('l-signal', known ? `${live.rssi} dBm · ${signalWord(live.rssi)}` : '—');
+  set('l-received', live.count.toLocaleString());
+  set('l-missed', live.wifi ? live.missed.toLocaleString() : '—');
+  set('l-age', ago(now - live.last) + ' ago');
 }
 
 function addLive(r) {
@@ -168,12 +206,19 @@ function addLive(r) {
   for (const f in FIELDS) data[f].push(r[f]);
   data.generated_at_s = now;
   live.count++; live.last = now;
+  noteLink(r.link);
   render();
 }
 
 function setLiveStatus(text) {
   document.getElementById('connect').textContent = live.port ? 'Disconnect brain' : 'Connect brain (USB)';
   if (text) document.getElementById('banner').innerHTML = text;
+}
+
+function setSpan(seconds) {
+  span = seconds;
+  document.querySelectorAll('button[data-seconds]').forEach(o => o.setAttribute('aria-pressed', +o.dataset.seconds === span));
+  if (data) render();
 }
 
 async function connectBrain() {
@@ -188,7 +233,9 @@ async function connectBrain() {
     setLiveStatus('<strong>COULD NOT OPEN THE PORT</strong> — ' + e.message + '. Close any serial monitor or bridge using it, then try again.');
     return;
   }
-  live.port = port; live.count = 0;
+  Object.assign(live, {port, count: 0, since: Date.now() / 1000, wifi: false, boot: null, missed: 0, rssi: null});
+  setSpan(300);
+  document.getElementById('link').hidden = false;
   setLiveStatus('<strong>CONNECTED</strong> — waiting for the first reading (one per second). If none arrive, check that the sensor board has power and is near the brain.');
   const decoder = new TextDecoderStream();
   const closed = port.readable.pipeTo(decoder.writable).catch(() => {});
@@ -212,11 +259,12 @@ async function connectBrain() {
   await closed;
   await port.close().catch(() => {});
   live.port = live.reader = null;
-  setLiveStatus('<strong>BRAIN DISCONNECTED</strong> — ' + live.count + ' live readings were shown. Reconnect, or reload to see published readings.');
+  document.getElementById('link').hidden = true;
+  setLiveStatus('<strong>BRAIN DISCONNECTED</strong> — ' + live.count + ' live readings were shown, ' + live.missed + ' missed. Reconnect, or reload to see published readings.');
 }
 
 async function load() {
-  if (live.port) return; /* Live readings are newer than anything published. */
+  if (live.port || live.count) return; /* Live readings are newer than anything published. */
   try {
     const r = await fetch('data/bme280.json?t=' + Date.now(), {cache: 'no-store'});
     if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -228,11 +276,7 @@ async function load() {
   }
 }
 
-document.querySelectorAll('button[data-hours]').forEach(b => b.addEventListener('click', () => {
-  hours = +b.dataset.hours;
-  document.querySelectorAll('button[data-hours]').forEach(o => o.setAttribute('aria-pressed', o === b));
-  if (data) render();
-}));
+document.querySelectorAll('button[data-seconds]').forEach(b => b.addEventListener('click', () => setSpan(+b.dataset.seconds)));
 let resizeTimer;
 addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => data && render(), 150); });
 const connect = document.getElementById('connect');
@@ -243,6 +287,12 @@ else {
 }
 load();
 setInterval(load, 60000);
+/* Keep the clock and graphs moving while the sensor is silent, so a stopped link is visible. */
+setInterval(() => {
+  if (!live.port || !live.count) return;
+  data.generated_at_s = Date.now() / 1000;
+  render();
+}, 1000);
 </script>
 </body>
 </html>
