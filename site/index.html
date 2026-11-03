@@ -241,6 +241,8 @@ function fromCloud(j) {
 // Live mode: read the brain (gateway) or a USB-connected sensor straight from the serial port.
 const live = {port: null, reader: null, count: 0, since: Infinity, links: new Map()};
 const LINE = /Temperature: (-?\d+\.\d+) C \| Humidity: (\d+\.\d+) %RH \| Pressure: (\d+\.\d+) hPa/;
+/* MESS-RCOS mesh firmware: "Local|Remote origin=<MAC> session=<n> ... : sensor=bme280 status=ESP_OK C=<C> Pa=<Pa> %RH=<RH>". */
+const MESH = /origin=([0-9a-f:]{17}) session=(\d+)\b.*: sensor=bme280 status=ESP_OK C=(-?[\d.]+) Pa=([\d.]+) %RH=([\d.]+)/;
 const inRange = r => r.temperature_c >= -40 && r.temperature_c <= 85 && r.humidity_pct >= 0 &&
   r.humidity_pct <= 100 && r.pressure_hpa >= 300 && r.pressure_hpa <= 1100;
 
@@ -253,6 +255,11 @@ function parseLine(line) {
       r = {temperature_c: j.temperature_c, humidity_pct: j.humidity_pct, pressure_hpa: j.pressure_hpa};
       link = {node: String(j.node_id), boot: j.boot_id, sequence: j.sequence, rssi: j.rssi_dbm};
     } catch (e) { return null; }
+  } else if (MESH.test(line)) {
+    const m = MESH.exec(line), rssi = /link_RSSI=(-?\d+) dBm/.exec(line);
+    r = {temperature_c: +m[3], humidity_pct: +m[5], pressure_hpa: +m[4] / 100};
+    /* The mesh numbers all sensors' records together, so gaps don't mean lost BME280 readings: no sequence. */
+    link = {node: m[1].replace(/:/g, ''), boot: m[2], rssi: rssi ? +rssi[1] : null};
   } else {
     const m = LINE.exec(line);
     if (m) r = {temperature_c: +m[1], humidity_pct: +m[2], pressure_hpa: +m[3]};
@@ -262,15 +269,15 @@ function parseLine(line) {
 
 function addLive(r) {
   const now = Date.now() / 1000, id = r.link ? r.link.node : 'usb';
-  if (!view.nodes.has(id)) view.nodes.set(id, {...emptySeries(), live: true, missed: r.link ? 0 : null});
+  if (!view.nodes.has(id)) view.nodes.set(id, {...emptySeries(), live: true, missed: r.link && r.link.sequence !== undefined ? 0 : null});
   const s = view.nodes.get(id);
   s.t.push(now);
   for (const f in FIELDS) s[f].push(r[f]);
   s.last = now;
   if (r.link) { /* each sensor numbers its readings, so a jump within one boot is a reading lost on the way */
     const k = r.link;
-    if (k.boot === s.boot && k.sequence > s.sequence) s.missed += k.sequence - s.sequence - 1;
-    Object.assign(s, {boot: k.boot, sequence: k.sequence, rssi: k.rssi, link: true});
+    if (k.sequence !== undefined && k.boot === s.boot && k.sequence > s.sequence) s.missed += k.sequence - s.sequence - 1;
+    Object.assign(s, {boot: k.boot, sequence: k.sequence, rssi: Number.isFinite(k.rssi) ? k.rssi : s.rssi, link: true});
   }
   view.generated_at_s = now;
   live.count++;
