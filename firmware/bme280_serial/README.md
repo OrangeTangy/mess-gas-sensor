@@ -120,6 +120,10 @@ python3 firmware/bme280_serial/server/bridge.py --port /dev/cu.SLAB_USBtoUART4
 
 The sensor sends only the newest reading and reconnects automatically after the hotspot drops or either board reboots. Readings taken while the link is down are dropped, not queued. Wi-Fi draws roughly 100–250 mA at peaks, so size the battery accordingly. Some power banks switch off at low draw; this load is normally enough to keep them on. Links are plain, unauthenticated HTTP; use only your own hotspot. Built firmware contains the Wi-Fi password, so do not share `.bin` files.
 
+## Adding more sensors
+
+One brain takes several sensor boards. For each extra board, wire a BME280 and flash this same firmware with the same hotspot settings (`sdkconfig.local`), adjusting SDA/SCL if the wiring differs. It joins the brain automatically. Each board is told apart by its board ID (MAC address). The website and the brain's page give every sensor its own coloured line and table row, labelled by the last four characters of its ID. The brain's hotspot takes eight devices in total, sensors and phones viewing its page together.
+
 ## Publish to the public website
 
 Live site: **https://orangetangy.github.io/mess-gas-sensor/** (temperature, humidity and pressure graphs for 1 h / 6 h / 24 h, latest values, CSV download).

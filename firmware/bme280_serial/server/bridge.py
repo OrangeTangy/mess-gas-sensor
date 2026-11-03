@@ -65,27 +65,33 @@ def validate(data, now=None):
                 rssi_dbm=data['rssi_dbm'])
 
 
+def short_id(node_id):
+    """Public sensor label: the last 4 hex digits of the board ID, so full MAC addresses stay private."""
+    return node_id[-4:] if node_id else 'usb'
+
+
 def site_data(csv_path, now=None, hours=24, step_s=10):
-    """Columnar, thinned readings for the public site; omits node IDs (board MAC addresses)."""
+    """Columnar, thinned readings per sensor for the public site, keyed by short_id()."""
     now = now or datetime.now(timezone.utc)
     start = now.timestamp() - hours * 3600
-    out = dict(generated_at=now.isoformat(), window_hours=hours, step_s=step_s,
-               t=[], temperature_c=[], humidity_pct=[], pressure_hpa=[])
-    if not Path(csv_path).exists():
-        return out
-    with open(csv_path, newline='') as f:
-        for row in csv.DictReader(f):
-            try:
-                t = datetime.fromisoformat(row['received_at']).timestamp()
-                values = [float(row[k]) for k in ('temperature_c', 'humidity_pct', 'pressure_hpa')]
-            except (KeyError, TypeError, ValueError):
-                continue
-            if t < start or (out['t'] and t < out['t'][-1] + step_s):
-                continue
-            out['t'].append(int(t))
-            for key, value in zip(('temperature_c', 'humidity_pct', 'pressure_hpa'), values):
-                out[key].append(value)
-    return out
+    nodes = {}
+    if Path(csv_path).exists():
+        with open(csv_path, newline='') as f:
+            for row in csv.DictReader(f):
+                try:
+                    t = datetime.fromisoformat(row['received_at']).timestamp()
+                    values = [float(row[k]) for k in ('temperature_c', 'humidity_pct', 'pressure_hpa')]
+                except (KeyError, TypeError, ValueError):
+                    continue
+                key = short_id(row.get('node_id') or '')
+                series = nodes.setdefault(key, dict(node_id=key, t=[], temperature_c=[], humidity_pct=[], pressure_hpa=[]))
+                if t < start or (series['t'] and t < series['t'][-1] + step_s):
+                    continue
+                series['t'].append(int(t))
+                for name, value in zip(('temperature_c', 'humidity_pct', 'pressure_hpa'), values):
+                    series[name].append(value)
+    return dict(generated_at=now.isoformat(), window_hours=hours, step_s=step_s,
+                nodes=[n for _, n in sorted(nodes.items()) if n['t']])
 
 
 def publish(site_dir, payload, remote, branch='gh-pages', author=None):
@@ -133,7 +139,7 @@ class Bridge(ThreadingHTTPServer):
             try:
                 payload = site_data(self.directory / 'bme280.csv')
                 publish(repo / 'site', payload, remote, author=author)
-                print(f'Published {len(payload["t"])} points to gh-pages at {payload["generated_at"]}', flush=True)
+                print(f'Published {sum(len(n["t"]) for n in payload["nodes"])} points to gh-pages at {payload["generated_at"]}', flush=True)
             except (OSError, subprocess.SubprocessError) as e:
                 detail = getattr(e, 'stderr', '') or e
                 print(f'Publish failed (will retry): {str(detail).strip()}', flush=True)

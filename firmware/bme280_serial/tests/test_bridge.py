@@ -69,13 +69,18 @@ class Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'bme280.csv'
             rows = ['received_at,source,node_id,sequence,temperature_c,humidity_pct,pressure_hpa,rssi_dbm']
+            at = lambda s: datetime.fromtimestamp(NOW.timestamp() + s, timezone.utc).isoformat()
             for s in [-90000, 0, 4, 10, 11, 25]:  # seconds after NOW; first is outside 24 h
-                rows.append(f'{datetime.fromtimestamp(NOW.timestamp() + s, timezone.utc).isoformat()},wifi,a4cf12000101,1,24.5,43.0,1019.4,-50')
+                rows.append(f'{at(s)},wifi,a4cf12000101,1,24.5,43.0,1019.4,-50')
+            for s in [2, 6]:  # a second sensor interleaved with the first is thinned on its own
+                rows.append(f'{at(s)},wifi,a4cf120000b2,1,21.0,55.0,1016.0,-70')
+            rows.append(f'{at(3)},serial,,,25.0,40.0,1015.0,')
             rows.append('garbage,wifi,,,x,y,z,')
             path.write_text('\n'.join(rows) + '\n')
             out = b.site_data(path, datetime.fromtimestamp(NOW.timestamp() + 30, timezone.utc))
-            self.assertEqual([t - int(NOW.timestamp()) for t in out['t']], [0, 10, 25])
-            self.assertNotIn('a4cf12000101', json.dumps(out))
+            nodes = {n['node_id']: [t - int(NOW.timestamp()) for t in n['t']] for n in out['nodes']}
+            self.assertEqual(nodes, {'0101': [0, 10, 25], '00b2': [2], 'usb': [3]})
+            self.assertNotIn('a4cf12', json.dumps(out))
 
 if __name__ == '__main__':
     unittest.main()

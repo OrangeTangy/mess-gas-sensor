@@ -7,3 +7,4 @@ __pycache__/
 .RData
 .Rproj.user/
 .vscode/settings.json
+supabase/*.local.sql
