@@ -97,8 +97,10 @@ as $$
     from public.bme280_readings
     where measured_at >= now() - interval '7 days'
     order by node_id, measured_at desc
-  ), session as ( -- readings received vs. sequence numbers sent in the last 5 minutes, per sensor
-    select l.node_id, count(*) as received, max(r.sequence) - min(r.sequence) + 1 as sent
+  ), session as ( -- readings received vs. expected (one a second) in the last 5 minutes, per sensor.
+    -- Time-based because the mesh numbers every sensor's messages together, so sequence gaps mislead.
+    select l.node_id, count(*) as received,
+           round(extract(epoch from max(r.measured_at) - min(r.measured_at)))::bigint + 1 as sent
     from public.bme280_readings r join latest l on r.node_id = l.node_id and r.boot_id = l.boot_id
     where r.measured_at >= now() - interval '5 minutes'
     group by l.node_id

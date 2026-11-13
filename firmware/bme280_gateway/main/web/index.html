@@ -40,6 +40,7 @@
   <h1>MESS BME280 Brain</h1>
   <p class="lede">Served by the brain ESP32 itself. Each sensor sends its readings to the brain over the brain's own Wi-Fi hotspot; no computer or internet is involved.</p>
   <div id="banner" class="banner">Connecting to the brain…</div>
+  <p id="relay" class="hint" hidden></p>
   <div class="controls" role="group" aria-label="Time range">
     <button data-seconds="60" aria-pressed="false">1 minute</button>
     <button data-seconds="300" aria-pressed="true">5 minutes</button>
@@ -64,6 +65,10 @@ const nodes = new Map();
 const colours = new Map(); /* sensor ID -> palette slot */
 const link = {after: 0, reached: 0, ok: false, uptime: 0};
 let span = 300;
+/* Visitor relay: this page uploads the brain's readings to the live site over the visitor's own
+ * internet (phones keep mobile data on this internet-less hotspot). Settings come from /relay. */
+const relay = {config: null, pending: [], uploaded: 0, last: 0, state: 'off', status: 0};
+const RELAY_BATCH = 200, RELAY_MAX = 5000, RELAY_EVERY_MS = 10000;
 
 const ago = s => s < 90 ? Math.round(s) + ' s' : Math.round(s / 60) + ' min';
 const fmtTime = t => new Date(t * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
@@ -168,7 +173,11 @@ async function poll() {
       if (boot === s.boot && sequence > s.sequence) s.missed += sequence - s.sequence - 1;
       Object.assign(s, {boot, sequence, rssi, received: s.received + 1});
       link.after = id;
+      if (relay.config) relay.pending.push({node_id: node, boot_id: boot, sequence, temperature_c: t, humidity_pct: h,
+        pressure_hpa: p, rssi_dbm: Number.isInteger(rssi) && rssi >= -127 && rssi <= 0 ? rssi : -127,
+        brain_age_ms: j.now_ms - receivedMs, seen_at: now});
     }
+    if (relay.pending.length > RELAY_MAX) relay.pending.splice(0, relay.pending.length - RELAY_MAX);
     for (const s of nodes.values()) {
       const keep = s.t.findIndex(t => t >= now / 1000 - 600);
       if (keep > 0) for (const k of ['t', ...Object.keys(FIELDS)]) s[k].splice(0, keep);
@@ -186,9 +195,52 @@ document.querySelectorAll('button[data-seconds]').forEach(b => b.addEventListene
 }));
 let resizeTimer;
 addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 150); });
+async function upload() {
+  if (!relay.config || !relay.pending.length) return;
+  const batch = relay.pending.slice(0, RELAY_BATCH), now = Date.now();
+  const readings = batch.map(({brain_age_ms, seen_at, ...r}) => ({...r, age_ms: brain_age_ms + (now - seen_at)}));
+  try {
+    const r = await fetch(relay.config.url + '/rest/v1/rpc/add_bme280_readings', {
+      method: 'POST', cache: 'no-store', signal: AbortSignal.timeout(15000),
+      headers: {apikey: relay.config.key, 'Content-Type': 'application/json'},
+      body: JSON.stringify({upload_key: relay.config.upload_key, readings})});
+    if (r.status >= 500 || r.status === 429) throw new Error('HTTP ' + r.status);
+    relay.pending.splice(0, batch.length); /* stored, duplicate or rejected: never resend the same batch forever */
+    if (r.ok) { relay.uploaded += batch.length; relay.last = Date.now() / 1000; relay.state = 'ok'; }
+    else { relay.state = 'rejected'; relay.status = r.status; }
+  } catch (e) {
+    relay.state = 'offline'; /* no internet on this device right now; keep the readings and retry */
+  }
+}
+
+function renderRelay() {
+  const el = document.getElementById('relay');
+  el.hidden = !relay.config;
+  if (!relay.config) return;
+  const waiting = relay.pending.length ? ` ${relay.pending.length.toLocaleString()} waiting.` : '';
+  el.textContent = relay.state === 'ok'
+    ? `Live site: updated through this device's internet — ${relay.uploaded.toLocaleString()} readings sent, last ${ago(Date.now() / 1000 - relay.last)} ago.${waiting} Keep this page open to keep orangetangy.github.io/mess-gas-sensor live.`
+    : relay.state === 'offline'
+    ? `Live site: this device can't reach the internet right now (on a phone, turn mobile data on).${waiting} They'll upload when it can.`
+    : relay.state === 'rejected'
+    ? `Live site: upload rejected (HTTP ${relay.status}). The visitor key may be revoked or the database not set up.`
+    : 'Live site: sending readings through this device\'s internet…';
+}
+
 (async function loop() {
+  if (relay.state === 'off') { /* once: is the relay set up on this brain? */
+    relay.state = 'starting';
+    try {
+      const c = await (await fetch('/relay', {cache: 'no-store', signal: AbortSignal.timeout(3000)})).json();
+      if (c.url && c.key && c.upload_key) {
+        relay.config = c;
+        setInterval(async () => { await upload(); renderRelay(); }, RELAY_EVERY_MS);
+      }
+    } catch (e) { /* older brain firmware without /relay */ }
+  }
   await poll();
   render();
+  renderRelay();
   setTimeout(loop, 1000);
 })();
 </script>

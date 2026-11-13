@@ -14,6 +14,16 @@ The brain also serves its own graph page, so both boards can run from any USB po
 
 The page shows live temperature, humidity and pressure graphs (1, 5 or 10 minutes) with one coloured line per sensor, plus a table of each sensor's latest values, signal strength, and readings received and missed. The brain keeps the last 1,200 readings in memory (10 minutes for two sensors), and a restart clears them. While joined, that device has no internet: the hotspot is not connected to anything. Phones may warn about this or switch back to another network; choose to stay connected. The hotspot takes eight devices in total, sensors and viewers together.
 
+## Live website through a visitor's phone (no internet on the brain)
+
+The brain has no internet of its own, but the page at http://192.168.4.1/ can relay readings to the [live website](https://orangetangy.github.io/mess-gas-sensor/) through the internet of whoever is viewing it.
+
+- **iPhone (tested):** join `MESS-BME280`, keep mobile data on, and open `http://192.168.4.1` in Safari. iOS keeps local traffic on the hotspot and sends the upload over mobile data. A "Live site" line under the banner counts readings sent every 10 seconds.
+- **Android:** the page loads only with mobile data off, so it cannot upload. Graphs still work.
+- **Only while the page is open:** each visitor also uploads the brain's backlog (about 20 minutes for one sensor), and Supabase ignores duplicates. Readings older than that are lost and show as gaps on the site.
+
+Setup: in Supabase, run `supabase/schema.sql`, then a git-ignored `supabase/visitor_key.local.sql` that stores the SHA-256 hash of `CONFIG_MESS_GW_VISITOR_KEY` with label `visitor`. Put the key itself in the brain's `sdkconfig.local` next to `CONFIG_MESS_GW_SUPABASE_URL` and `CONFIG_MESS_GW_SUPABASE_KEY`. The brain hands all three to the page from `/relay`, so anyone on the hotspot can read the visitor key. It is separate from the brain's own upload key; revoke it with `delete from private.upload_keys where label = 'visitor';`.
+
 ## Fully wireless: upload to the website over the internet
 
 With an uplink set, the brain also joins an internet Wi-Fi (eduroam, or any 2.4 GHz WPA2 network) while keeping its hotspot, and uploads readings to Supabase every 10 seconds. The [website](https://orangetangy.github.io/mess-gas-sensor/) then shows them from anywhere, about 10–20 seconds behind, and both boards can run on power banks. While the internet is down, the brain keeps the last 15 minutes and uploads them once it is back. Older readings are dropped. The hotspot moves to the internet network's channel; sensors find it again on their own.

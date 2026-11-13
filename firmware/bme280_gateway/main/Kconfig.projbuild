@@ -38,5 +38,12 @@ config MESS_GW_SUPABASE_KEY
 config MESS_GW_UPLOAD_KEY
     string "Upload key (its SHA-256 hash is stored in Supabase private.upload_keys)"
     default ""
+config MESS_GW_VISITOR_KEY
+    string "Visitor relay key: phones viewing the hotspot page upload with it (empty = relay off)"
+    default ""
+    help
+        A separate key from MESS_GW_UPLOAD_KEY, so it can be revoked on its own. The page at
+        http://192.168.4.1/ fetches it from /relay, so anyone on the hotspot can read it.
+        Uses MESS_GW_SUPABASE_URL and MESS_GW_SUPABASE_KEY; no uplink network is needed.
 endmenu
 endmenu

@@ -150,6 +150,20 @@ static esp_err_t data_get(httpd_req_t *req)
     return httpd_resp_send_chunk(req, NULL, 0);
 }
 
+/* GET /relay hands the page what it needs to upload readings through the visitor's own
+ * internet (phones keep mobile data while on this internet-less hotspot). {} = relay off. */
+static esp_err_t relay_get(httpd_req_t *req)
+{
+    char body[384];
+    if (strlen(CONFIG_MESS_GW_SUPABASE_URL) && strlen(CONFIG_MESS_GW_SUPABASE_KEY) && strlen(CONFIG_MESS_GW_VISITOR_KEY))
+        snprintf(body, sizeof(body), "{\"url\":\"%s\",\"key\":\"%s\",\"upload_key\":\"%s\"}",
+                 CONFIG_MESS_GW_SUPABASE_URL, CONFIG_MESS_GW_SUPABASE_KEY, CONFIG_MESS_GW_VISITOR_KEY);
+    else strcpy(body, "{}");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req, body);
+}
+
 static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg; (void)base;
@@ -203,11 +217,13 @@ void app_main(void)
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.lru_purge_enable = true; /* browsers hold idle connections open; don't let them lock out the sensor */
+    config.stack_size = 8192; /* handlers keep 0.5-1 KB buffers and format floats; the 4 KB default is too tight */
     ESP_ERROR_CHECK(httpd_start(&server, &config));
     const httpd_uri_t handlers[] = {
         {.uri = "/readings", .method = HTTP_POST, .handler = readings_post},
         {.uri = "/", .method = HTTP_GET, .handler = page_get},
         {.uri = "/data", .method = HTTP_GET, .handler = data_get},
+        {.uri = "/relay", .method = HTTP_GET, .handler = relay_get},
     };
     for (size_t i = 0; i < sizeof(handlers) / sizeof(handlers[0]); i++)
         ESP_ERROR_CHECK(httpd_register_uri_handler(server, &handlers[i]));
