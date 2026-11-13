@@ -36,6 +36,9 @@ class Tests(unittest.TestCase):
         self.assertEqual(b.validate(WIFI, NOW), dict(received_at=NOW.isoformat(), source='wifi', node_id='a4cf12000101',
             sequence=7, temperature_c=24.6, humidity_pct=43.0, pressure_hpa=1019.4, rssi_dbm=-55))
 
+    def test_wifi_light_and_gas_allowed(self):
+        self.assertEqual(b.validate(dict(WIFI, lux=312.5, tvoc_ppb=14, eco2_ppm=415), NOW), b.validate(WIFI, NOW))
+
     def test_wifi_rejected(self):
         for change in [dict(humidity_pct=101), dict(node_id='=SUM(A1)'), dict(sequence=-1), dict(sequence=True),
                        dict(temperature_c='24'), dict(rssi_dbm=5), dict(extra=1)]:

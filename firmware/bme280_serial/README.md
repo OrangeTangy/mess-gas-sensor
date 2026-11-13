@@ -2,6 +2,12 @@
 
 Derived from the ESP-IDF hello_world project. Prints real temperature (C), relative humidity (%RH), and pressure (hPa) once per second. **BME280 does not measure gas, TVOC, or CO2.** This is a separate local bench test, not the SGP30 gas dashboard protocol.
 
+## Three sensors on one I2C bus
+
+The same firmware also reads a **BH1750** light sensor (0x23 or 0x5C) and an **SGP30** gas sensor (0x58) wired to the same SDA/SCL as the BME280 (0x76 or 0x77). At start-up it logs every I2C address it finds and uses whichever of the three are present; a board with only some of them still works. Each second it prints the BME280 line below, plus `Light: … lx` and, after the SGP30's 15-second warm-up, `TVOC: … ppb | eCO2: … ppm`, and sends all available values to the brain. The SGP30 is given the BME280's humidity for compensation when both are fitted. eCO₂ is the SGP30's estimate from VOCs, not a direct CO₂ measurement. The SGP30 driver is shared from `firmware/gas_sensor/components/sgp30`.
+
+After upgrading, re-run `supabase/schema.sql` in Supabase so the live site stores light and gas; existing readings are kept.
+
 ## Changed files compared with hello_world
 
 - `main/bme280_main.c` replaces the hello-world print/countdown with I2C initialization, sensor identification, configuration, and a continuous read loop.

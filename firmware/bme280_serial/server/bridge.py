@@ -47,7 +47,9 @@ def parse(line, now=None):
 def validate(data, now=None):
     """Checks a Wi-Fi POST body from main/wifi_sender.c and returns the stored record."""
     keys = {'node_id', 'boot_id', 'sequence', 'temperature_c', 'humidity_pct', 'pressure_hpa', 'rssi_dbm'}
-    if not isinstance(data, dict) or set(data) != keys:
+    # Light and gas values from a BH1750/SGP30 on the same board are allowed but not recorded here.
+    optional = {'lux', 'tvoc_ppb', 'eco2_ppm'}
+    if not isinstance(data, dict) or not keys <= set(data) <= keys | optional:
         raise ValueError('Missing or unexpected fields')
     for key, length in [('node_id', 12), ('boot_id', 8)]:
         if not isinstance(data[key], str) or not re.fullmatch('[0-9a-f]{%d}' % length, data[key]):
